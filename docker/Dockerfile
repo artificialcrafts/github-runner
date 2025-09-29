@@ -18,10 +18,8 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 RUN useradd --create-home --home-dir ${RUNNER_HOME} runner \
-    && mkdir -p ${RUNNER_HOME} ${RUNNER_WORKDIR} \
-    && chown -R runner:runner ${RUNNER_HOME}
+    && mkdir -p ${RUNNER_HOME} ${RUNNER_WORKDIR}
 
-USER runner
 WORKDIR ${RUNNER_HOME}
 
 RUN curl -sSL https://github.com/actions/runner/releases/download/v${RUNNER_VERSION}/actions-runner-linux-x64-${RUNNER_VERSION}.tar.gz \
@@ -30,8 +28,10 @@ RUN curl -sSL https://github.com/actions/runner/releases/download/v${RUNNER_VERS
     && rm actions-runner.tar.gz \
     && ./bin/installdependencies.sh
 
+RUN chown -R runner:runner ${RUNNER_HOME}
+
+USER runner
 COPY --chown=runner:runner scripts/entrypoint.sh ./entrypoint.sh
 RUN chmod +x ./entrypoint.sh
 
 ENTRYPOINT ["/runner/entrypoint.sh"]
-
