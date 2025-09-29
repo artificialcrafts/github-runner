@@ -1,2 +1,4 @@
 .env
 work/
+docker/.env
+docker/work/

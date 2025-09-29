@@ -4,10 +4,10 @@ This repository contains a Docker packaging of the GitHub Actions self-hosted ru
 
 ## What's inside
 
-- `Dockerfile` – builds the runner image on top of Ubuntu 22.04.
+- `docker/Dockerfile` – builds the runner image on top of Ubuntu 22.04.
+- `docker/docker-compose.yml` – spins up the runner container, mounting the Clocktopus deployment directories and Docker socket.
+- `docker/.env.example` – template for the environment variables the runner needs.
 - `scripts/entrypoint.sh` – registers the runner with GitHub and starts the service.
-- `docker-compose.yml` – spins up the runner container, mounting the Clocktopus deployment directories and Docker socket.
-- `.env.example` – template for the environment variables the runner needs.
 - `examples/clocktopus-deploy.yml` – sample workflow to drop into the Clocktopus repo.
 
 ## Prerequisites
@@ -15,16 +15,16 @@ This repository contains a Docker packaging of the GitHub Actions self-hosted ru
 1. Docker and Docker Compose installed on the host machine.
 2. Network access from the host to `github.com` over HTTPS (port 443).
 3. Access to generate a **repository** or **organization** self-hosted runner registration token in GitHub (`Settings ▸ Actions ▸ Runners`). Tokens expire after one hour; fetch a fresh one each time you need to (re-)register.
-4. The Clocktopus deployment directories available on the host (default assumption: `/home/artificialcrafts/apps/clocktopus-*`). Adjust the mount path via `HOST_APPS_PATH` in `.env` if your layout differs.
+4. The Clocktopus deployment directories available on the host (default assumption: `/home/artificialcrafts/apps/clocktopus-*`). Adjust the mount path via `HOST_APPS_PATH` in `docker/.env` if your layout differs.
 
 ## Quick start
 
 1. Clone this repository onto the internal host that can reach the Clocktopus Docker daemon and deployment scripts.
-2. Copy the environment template and fill in the values:
+2. Copy the environment template into `docker/.env` and fill in the values:
 
    ```bash
-   cp .env.example .env
-   # Edit .env and add the fresh RUNNER_TOKEN from GitHub
+   cp docker/.env.example docker/.env
+   # Edit docker/.env and add the fresh RUNNER_TOKEN from GitHub
    ```
 
    - `RUNNER_URL` should point to the GitHub repository that owns the workflows (e.g. `https://github.com/your-org/clocktopus`).
@@ -32,10 +32,10 @@ This repository contains a Docker packaging of the GitHub Actions self-hosted ru
    - `RUNNER_LABELS` defaults to `self-hosted,linux,deploy`. Workflows must request these labels.
    - `HOST_APPS_PATH` should match the directory on the host where your environments live (e.g. `/home/artificialcrafts/apps`).
 
-3. Build and start the runner container:
+3. Build and start the runner container (from the repository root):
 
    ```bash
-   docker compose up --build -d
+   docker compose -f docker/docker-compose.yml up --build -d
    ```
 
    The container keeps a persistent work directory in `./work` and mounts:
@@ -46,18 +46,18 @@ This repository contains a Docker packaging of the GitHub Actions self-hosted ru
 4. Watch the logs the first time to confirm successful registration and job execution:
 
    ```bash
-   docker compose logs -f
+   docker compose -f docker/docker-compose.yml logs -f github-runner
    ```
 
-5. When the registration token expires or you redeploy the container, fetch a fresh token, update `.env`, and restart:
+5. When the registration token expires or you redeploy the container, fetch a fresh token, update `docker/.env`, and restart:
 
    ```bash
-   docker compose down
-   # update RUNNER_TOKEN in .env
-   docker compose up -d
+   docker compose -f docker/docker-compose.yml down
+   # update RUNNER_TOKEN in docker/.env
+   docker compose -f docker/docker-compose.yml up -d
    ```
 
-   If you prefer ephemeral runners (new registration per job), uncomment `RUNNER_EPHEMERAL=true` in `.env`.
+   If you prefer ephemeral runners (new registration per job), uncomment `RUNNER_EPHEMERAL=true` in `docker/.env`.
 
 ## Example workflow for the Clocktopus repo
 
@@ -109,12 +109,12 @@ jobs:
 ### Notes
 
 - The workflow relies on the `/apps` mount exposed by the runner container. Adjust the mount or paths if your deployment scripts live elsewhere.
-- If your `deploy.sh` script rebuilds Docker images, ensure the runner UID has permission to access the socket. By default the container runs as the `runner` user; you may need to add it to the host Docker group ID (set `group_add` in `docker-compose.yml`).
+- If your `deploy.sh` script rebuilds Docker images, ensure the runner UID has permission to access the socket. By default the container runs as the `runner` user; you may need to add it to the host Docker group ID (set `group_add` in `docker/docker-compose.yml`).
 - Restrict which workflows can target the runner by scoping `RUNNER_URL` to a single repository and assigning unique labels (`runs-on`).
 - Consider using GitHub environments with required reviewers/secrets for additional safety gates before deployments.
 
 ## Managing updates
 
-- To update the runner version, change `RUNNER_VERSION` in `Dockerfile` and rebuild.
-- Keep the host patched and monitor `docker compose logs` for any registration failures.
+- To update the runner version, change `RUNNER_VERSION` in `docker/Dockerfile` and rebuild.
+- Keep the host patched and monitor `docker compose -f docker/docker-compose.yml logs` for any registration failures.
 - Use multiple runner instances (with different `RUNNER_NAME` and `RUNNER_LABELS`) if you need parallel deployments per environment.

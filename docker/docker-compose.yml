@@ -1,6 +1,8 @@
 services:
   github-runner:
-    build: .
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
     container_name: clocktopus-runner
     environment:
       RUNNER_URL: ${RUNNER_URL}
