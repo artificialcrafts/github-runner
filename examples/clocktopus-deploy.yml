@@ -1,0 +1,40 @@
+name: Deploy Clocktopus
+
+on:
+  push:
+    branches:
+      - development
+      - next
+      - main
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, linux, deploy]
+    steps:
+      - name: Select deployment target
+        run: |
+          case "${GITHUB_REF_NAME}" in
+            development)
+              echo "TARGET_DIR=/apps/clocktopus-development" >> "$GITHUB_ENV"
+              ;;
+            next)
+              echo "TARGET_DIR=/apps/clocktopus-next" >> "$GITHUB_ENV"
+              ;;
+            main)
+              echo "TARGET_DIR=/apps/clocktopus" >> "$GITHUB_ENV"
+              ;;
+            *)
+              echo "Unsupported branch ${GITHUB_REF_NAME}" >&2
+              exit 1
+              ;;
+          esac
+      - name: Checkout repository (optional)
+        uses: actions/checkout@v4
+      - name: Run deploy script
+        run: |
+          if [[ ! -x "${TARGET_DIR}/deploy.sh" ]]; then
+            echo "deploy.sh missing or not executable in ${TARGET_DIR}" >&2
+            exit 1
+          fi
+          cd "${TARGET_DIR}"
+          ./deploy.sh

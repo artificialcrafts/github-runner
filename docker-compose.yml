@@ -1,0 +1,19 @@
+services:
+  github-runner:
+    build: .
+    container_name: clocktopus-runner
+    environment:
+      RUNNER_URL: ${RUNNER_URL}
+      RUNNER_TOKEN: ${RUNNER_TOKEN}
+      RUNNER_NAME: ${RUNNER_NAME:-clocktopus-runner}
+      RUNNER_LABELS: ${RUNNER_LABELS:-self-hosted,linux,deploy}
+      RUNNER_GROUP: ${RUNNER_GROUP:-Default}
+      RUNNER_WORKDIR: /runner/_work
+      RUNNER_EPHEMERAL: ${RUNNER_EPHEMERAL:-}
+    env_file:
+      - .env
+    volumes:
+      - ./work:/runner/_work
+      - ${HOST_APPS_PATH:-/home/artificialcrafts/apps}:/apps
+      - /var/run/docker.sock:/var/run/docker.sock
+    restart: unless-stopped
