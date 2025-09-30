@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SCRIPT_PATH="${BASH_SOURCE[0]}"
+if [[ "${SCRIPT_PATH}" != /* ]]; then
+  SCRIPT_PATH="$(cd "$(dirname "${SCRIPT_PATH}")" && pwd)/$(basename "${SCRIPT_PATH}")"
+fi
+ROOT_DIR="$(cd "$(dirname "${SCRIPT_PATH}")/.." && pwd)"
 COMPOSE="docker-compose -f docker/docker-compose.yml"
 
 ENV_FILE_INPUT="${RUNNER_ENV_FILE:-envs/clocktopus.env}"
@@ -68,3 +72,6 @@ USAGE
     exit 1
     ;;
 esac
+EOF
+
+chmod +x scripts/runner.sh
