@@ -53,6 +53,13 @@ This repository contains a Docker packaging of the GitHub Actions self-hosted ru
    RUNNER_ENV_FILE=envs/clocktopus.env ./scripts/runner.sh logs github-runner
    ```
 
+   If you see `Permission denied` errors for `/runner/_work/_tool`, make sure the host work directory is writable by UID 1000 (the runner user):
+
+   ```bash
+   sudo chown -R 1000:1000 docker/work
+   sudo chmod -R u+rwX docker/work
+   ```
+
 5. If you did not supply `GITHUB_PAT`, fetch a fresh registration token each time you restart the container, update your chosen env file, and run:
 
    ```bash

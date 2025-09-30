@@ -2,20 +2,36 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-ENV_FILE="${RUNNER_ENV_FILE:-docker/envs/clocktopus.env}"
 COMPOSE="docker-compose -f docker/docker-compose.yml"
 
-if [[ ! -f "${ROOT_DIR}/${ENV_FILE}" ]]; then
-  echo "Env file ${ROOT_DIR}/${ENV_FILE} not found. Set RUNNER_ENV_FILE or create it." >&2
+ENV_FILE_INPUT="${RUNNER_ENV_FILE:-envs/clocktopus.env}"
+
+case "${ENV_FILE_INPUT}" in
+  /*)
+    HOST_ENV_PATH="${ENV_FILE_INPUT}"
+    COMPOSE_ENV_PATH="${ENV_FILE_INPUT}"
+    ;;
+  docker/*)
+    HOST_ENV_PATH="${ROOT_DIR}/${ENV_FILE_INPUT}"
+    COMPOSE_ENV_PATH="${ENV_FILE_INPUT#docker/}"
+    ;;
+  *)
+    HOST_ENV_PATH="${ROOT_DIR}/docker/${ENV_FILE_INPUT}"
+    COMPOSE_ENV_PATH="${ENV_FILE_INPUT}"
+    ;;
+esac
+
+if [[ ! -f "${HOST_ENV_PATH}" ]]; then
+  echo "Env file ${HOST_ENV_PATH} not found. Set RUNNER_ENV_FILE or create it." >&2
   exit 1
 fi
 
 # Export all vars defined in the env file (RUNNER_TOKEN stays blank, PAT is optional)
 set -a
-source "${ROOT_DIR}/${ENV_FILE}"
+source "${HOST_ENV_PATH}"
 set +a
 
-export RUNNER_ENV_FILE="${ENV_FILE}"
+export RUNNER_ENV_FILE="${COMPOSE_ENV_PATH}"
 
 case "${1:-}" in
   start)
@@ -47,7 +63,8 @@ Commands:
   build     Rebuild the runner image (forced no-cache)
 
 Environment variables:
-  RUNNER_ENV_FILE   Path (relative to docker/) to the env file (default envs/clocktopus.env)
+  RUNNER_ENV_FILE   Env file (default envs/clocktopus.env). Accepts paths like
+                    "envs/foo.env", "docker/envs/foo.env", or an absolute path.
 USAGE
     exit 1
     ;;
