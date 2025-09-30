@@ -72,6 +72,3 @@ USAGE
     exit 1
     ;;
 esac
-EOF
-
-chmod +x scripts/runner.sh
