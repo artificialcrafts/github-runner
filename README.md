@@ -32,16 +32,17 @@ This repository contains a Docker packaging of the GitHub Actions self-hosted ru
    - `RUNNER_LABELS` defaults to `self-hosted,linux,deploy`. Workflows must request these labels.
    - `HOST_APPS_PATH` should match the directory on the host where your environments live (e.g. `/home/artificialcrafts/apps`).
 
-3. Build and start the runner container (from the repository root), pointing Compose at the desired env file via `RUNNER_ENV_FILE` (defaults to `envs/clocktopus.env`):
+3. Build and start the runner container (from the repository root) using the helper script, which takes care of exporting the env values and invoking `docker-compose`:
 
    ```bash
-   export RUNNER_ENV_FILE=envs/clocktopus.env
-   docker compose -f docker/docker-compose.yml up --build -d
+   chmod +x scripts/runner.sh          # one time
+   RUNNER_ENV_FILE=envs/clocktopus.env ./scripts/runner.sh build   # optional, forces a rebuild
+   RUNNER_ENV_FILE=envs/clocktopus.env ./scripts/runner.sh start
    ```
 
-   (If you open a new shell later, re-export `RUNNER_ENV_FILE` or prefix compose commands with `RUNNER_ENV_FILE=...`.)
+   (If you omit `RUNNER_ENV_FILE`, the script defaults to `envs/clocktopus.env`. Reuse the same prefix for subsequent commands or export it in your shell.)
 
-   The container keeps a persistent work directory in `./work` and mounts:
+   The container keeps a persistent work directory in `./docker/work` and mounts:
 
    - `/apps` → `${HOST_APPS_PATH}` on the host (so workflows can run `deploy.sh`).
    - `/var/run/docker.sock` → the host Docker socket (optional, but useful if `deploy.sh` manipulates Docker).
@@ -49,24 +50,34 @@ This repository contains a Docker packaging of the GitHub Actions self-hosted ru
 4. Watch the logs the first time to confirm successful registration and job execution:
 
    ```bash
-   docker compose -f docker/docker-compose.yml logs -f github-runner
+   RUNNER_ENV_FILE=envs/clocktopus.env ./scripts/runner.sh logs github-runner
    ```
 
-5. If you did not supply `GITHUB_PAT`, fetch a fresh registration token each time you restart the container, update your chosen env file, and bring it back up:
+5. If you did not supply `GITHUB_PAT`, fetch a fresh registration token each time you restart the container, update your chosen env file, and run:
 
    ```bash
-   docker compose -f docker/docker-compose.yml down
-   # update RUNNER_TOKEN in docker/envs/clocktopus.env
-   docker compose -f docker/docker-compose.yml up -d
+   RUNNER_ENV_FILE=envs/clocktopus.env ./scripts/runner.sh restart
    ```
 
-   If `GITHUB_PAT` is set you can simply restart the compose stack—it will request new registration/removal tokens automatically. For ephemeral runners (new registration per job), uncomment `RUNNER_EPHEMERAL=true` in the env file.
+   If `GITHUB_PAT` is set you can simply rerun the script— it will request new registration/removal tokens automatically. For ephemeral runners (new registration per job), uncomment `RUNNER_EPHEMERAL=true` in the env file.
 
 ### Fetching tokens via CLI
 
 - GitHub CLI: `gh auth login` (once) then `gh repo runnertoken your-org/clocktopus` to print a fresh registration token, or `gh api --method POST repos/your-org/clocktopus/actions/runners/registration-token --jq .token`.
 - cURL: `curl -s -X POST -H "Authorization: Bearer $GITHUB_PAT" -H "Accept: application/vnd.github+json" https://api.github.com/repos/your-org/clocktopus/actions/runners/registration-token | jq -r .token`.
 - Replace `repos/...` with `orgs/<org>` if you register an organization-level runner.
+
+## Managing the runner container
+
+Use `scripts/runner.sh` for day-to-day operations:
+
+- `RUNNER_ENV_FILE=envs/clocktopus.env ./scripts/runner.sh start` – start the runner
+- `RUNNER_ENV_FILE=envs/clocktopus.env ./scripts/runner.sh restart` – restart with fresh tokens
+- `RUNNER_ENV_FILE=envs/clocktopus.env ./scripts/runner.sh stop` – stop and remove the container/network
+- `RUNNER_ENV_FILE=envs/clocktopus.env ./scripts/runner.sh logs [service]` – tail logs (defaults to `github-runner`)
+- `RUNNER_ENV_FILE=envs/clocktopus.env ./scripts/runner.sh build` – rebuild the image with the latest entrypoint changes
+
+Omit `RUNNER_ENV_FILE=…` if you keep the default `docker/envs/clocktopus.env`. The script auto-sources the env file so the container always receives the correct `RUNNER_URL`, labels, and PAT.
 
 ## Example workflow for the Clocktopus repo
 
@@ -76,9 +87,16 @@ Add a workflow similar to [`examples/clocktopus-deploy.yml`](examples/clocktopus
 name: Deploy Clocktopus
 
 on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Environment to deploy"
+        required: true
+        default: development
+        type: choice
+        options: [development, next, main]
   push:
     branches:
-      - development
       - next
       - main
 
@@ -86,32 +104,35 @@ jobs:
   deploy:
     runs-on: [self-hosted, linux, deploy]
     steps:
-      - name: Select deployment target
+      - name: Determine target path
+        id: pick
         run: |
-          case "${GITHUB_REF_NAME}" in
-            development)
-              echo "TARGET_DIR=/apps/clocktopus-development" >> "$GITHUB_ENV"
-              ;;
-            next)
-              echo "TARGET_DIR=/apps/clocktopus-next" >> "$GITHUB_ENV"
-              ;;
-            main)
-              echo "TARGET_DIR=/apps/clocktopus" >> "$GITHUB_ENV"
-              ;;
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+            target="${{ github.event.inputs.target }}"
+          else
+            target="${GITHUB_REF_NAME}"
+          fi
+
+          case "${target}" in
+            development) echo "PATH=/apps/clocktopus-development" >> "$GITHUB_OUTPUT" ;;
+            next)        echo "PATH=/apps/clocktopus-next" >> "$GITHUB_OUTPUT" ;;
+            main)        echo "PATH=/apps/clocktopus" >> "$GITHUB_OUTPUT" ;;
             *)
-              echo "Unsupported branch ${GITHUB_REF_NAME}" >&2
+              echo "Unsupported deployment target '${target}'" >&2
               exit 1
               ;;
           esac
+
       - name: Checkout repository (optional)
         uses: actions/checkout@v4
+
       - name: Run deploy script
+        working-directory: ${{ steps.pick.outputs.PATH }}
         run: |
-          if [[ ! -x "${TARGET_DIR}/deploy.sh" ]]; then
-            echo "deploy.sh missing or not executable in ${TARGET_DIR}" >&2
+          if [[ ! -x "deploy.sh" ]]; then
+            echo "deploy.sh missing or not executable in ${PWD}" >&2
             exit 1
           fi
-          cd "${TARGET_DIR}"
           ./deploy.sh
 ```
 
@@ -125,5 +146,5 @@ jobs:
 ## Managing updates
 
 - To update the runner version, change `RUNNER_VERSION` in `docker/Dockerfile` and rebuild.
-- Keep the host patched and monitor `docker compose -f docker/docker-compose.yml logs` for any registration failures.
+- Keep the host patched and monitor `./scripts/runner.sh logs` for any registration failures.
 - Use multiple runner instances (with different `RUNNER_NAME` and `RUNNER_LABELS`) if you need parallel deployments per environment.
