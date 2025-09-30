@@ -31,6 +31,7 @@ This repository contains a Docker packaging of the GitHub Actions self-hosted ru
    - Provide either a short-lived `RUNNER_TOKEN` from the GitHub UI/API **or** set `GITHUB_PAT` to a Personal Access Token with `repo` + `admin:repo_hook` (for repos) or `admin:org` (for org runners). When `GITHUB_PAT` is present the container auto-requests fresh registration/removal tokens on every start/stop.
    - `RUNNER_LABELS` defaults to `self-hosted,linux,deploy`. Workflows must request these labels.
    - `HOST_APPS_PATH` should match the directory on the host where your environments live (e.g. `/home/artificialcrafts/apps`).
+   - `HOST_SSH_PATH` should point to the host SSH directory containing a key that GitHub accepts (e.g. `/home/artificialcrafts/.ssh`).
 
 3. Build and start the runner container (from the repository root) using the helper script, which takes care of exporting the env values and invoking `docker-compose`:
 
@@ -46,6 +47,7 @@ This repository contains a Docker packaging of the GitHub Actions self-hosted ru
 
    - `/apps` → `${HOST_APPS_PATH}` on the host (so workflows can run `deploy.sh`).
    - `/var/run/docker.sock` → the host Docker socket (optional, but useful if `deploy.sh` manipulates Docker).
+   - `/runner/.ssh` → `${HOST_SSH_PATH}` read-only (so the runner can authenticate to GitHub via SSH for `git pull`).
 
 4. Watch the logs the first time to confirm successful registration and job execution:
 
@@ -59,6 +61,8 @@ This repository contains a Docker packaging of the GitHub Actions self-hosted ru
    sudo chown -R 1000:1000 docker/work
    sudo chmod -R u+rwX docker/work
    ```
+
+   Ensure `${HOST_SSH_PATH}` contains an SSH key that GitHub trusts (account key or deploy key) and that `known_hosts` already lists `github.com` (e.g. `ssh-keyscan github.com >> ${HOST_SSH_PATH}/known_hosts`). The runner image bundles the Docker CLI, buildx, and compose plugins so it can drive the host Docker engine via the mounted socket.
 
 5. If you did not supply `GITHUB_PAT`, fetch a fresh registration token each time you restart the container, update your chosen env file, and run:
 

@@ -18,6 +18,21 @@ RUN apt-get update \
         git \
     && rm -rf /var/lib/apt/lists/*
 
+RUN curl -fsSL https://download.docker.com/linux/static/stable/x86_64/docker-26.1.4.tgz \
+    -o /tmp/docker-cli.tgz \
+    && tar -xzf /tmp/docker-cli.tgz -C /tmp \
+    && mv /tmp/docker/docker /usr/local/bin/docker \
+    && chmod +x /usr/local/bin/docker \
+    && rm -rf /tmp/docker /tmp/docker-cli.tgz
+
+RUN mkdir -p /usr/local/lib/docker/cli-plugins \
+    && curl -fsSL https://github.com/docker/buildx/releases/download/v0.15.1/buildx-v0.15.1.linux-amd64 \
+        -o /usr/local/lib/docker/cli-plugins/docker-buildx \
+    && chmod +x /usr/local/lib/docker/cli-plugins/docker-buildx \
+    && curl -fsSL https://github.com/docker/compose/releases/download/v2.29.7/docker-compose-linux-x86_64 \
+        -o /usr/local/lib/docker/cli-plugins/docker-compose \
+    && chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+
 RUN useradd --create-home --home-dir ${RUNNER_HOME} runner \
     && mkdir -p ${RUNNER_HOME} ${RUNNER_WORKDIR}
 
