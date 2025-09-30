@@ -26,7 +26,6 @@ if [[ ! -f "${HOST_ENV_PATH}" ]]; then
   exit 1
 fi
 
-# Export all vars defined in the env file (RUNNER_TOKEN stays blank, PAT is optional)
 set -a
 source "${HOST_ENV_PATH}"
 set +a
