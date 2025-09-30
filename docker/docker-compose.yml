@@ -13,7 +13,7 @@ services:
       RUNNER_WORKDIR: /runner/_work
       RUNNER_EPHEMERAL: ${RUNNER_EPHEMERAL:-}
     env_file:
-      - .env
+      - ${RUNNER_ENV_FILE:-envs/clocktopus.env}
     volumes:
       - ./work:/runner/_work
       - ${HOST_APPS_PATH:-/home/artificialcrafts/apps}:/apps
