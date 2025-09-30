@@ -18,5 +18,5 @@ services:
       - ./work:/runner/_work
       - ${HOST_APPS_PATH:-/home/artificialcrafts/apps}:/apps
       - /var/run/docker.sock:/var/run/docker.sock
-      - /home/artificialcrafts/.ssh:/home/runner/.ssh:ro
+      - /home/artificialcrafts/.ssh:/runner/.ssh:ro
     restart: unless-stopped
