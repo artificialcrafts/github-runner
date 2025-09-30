@@ -1,5 +1,6 @@
 services:
   github-runner:
+    image: ${RUNNER_IMAGE_NAME}
     build:
       context: ..
       dockerfile: docker/Dockerfile
@@ -7,13 +8,13 @@ services:
     environment:
       RUNNER_URL: ${RUNNER_URL}
       RUNNER_TOKEN: ${RUNNER_TOKEN}
-      RUNNER_NAME: ${RUNNER_NAME:-clocktopus-runner}
+      RUNNER_NAME: ${RUNNER_NAME}
       RUNNER_LABELS: ${RUNNER_LABELS:-self-hosted,linux,deploy}
       RUNNER_GROUP: ${RUNNER_GROUP:-Default}
       RUNNER_WORKDIR: /runner/_work
       RUNNER_EPHEMERAL: ${RUNNER_EPHEMERAL:-}
     env_file:
-      - ${RUNNER_ENV_FILE:-envs/clocktopus.env}
+      - ${RUNNER_ENV_FILE}
     user: "${RUNNER_UID:-1000}:${RUNNER_GID:-1000}"
     volumes:
       - ./work:/runner/_work
