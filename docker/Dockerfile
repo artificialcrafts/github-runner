@@ -12,6 +12,7 @@ RUN apt-get update \
         curl \
         jq \
         libicu70 \
+        openssh-client \
         unzip \
         tar \
         git \
