@@ -1,0 +1,59 @@
+# .github/workflows/deploy.yml
+name: Deploy Clocktopus
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Environment to deploy"
+        required: true
+        default: development
+        type: choice
+        options: [development, next, main]
+  push:
+    branches:
+      - next
+      - main
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, linux, deploy]
+
+    env:
+      DEV_PATH: /apps/clocktopus-development
+      NEXT_PATH: /apps/clocktopus-next
+      MAIN_PATH: /apps/clocktopus
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Pick environment
+        id: pick
+        run: |
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+            target="${{ github.event.inputs.target }}"
+          else
+            target="${GITHUB_REF_NAME}"
+          fi
+
+          case "${target}" in
+            development) echo "PATH=${DEV_PATH}" >> "$GITHUB_OUTPUT" ;;
+            next)         echo "PATH=${NEXT_PATH}" >> "$GITHUB_OUTPUT" ;;
+            main)         echo "PATH=${MAIN_PATH}" >> "$GITHUB_OUTPUT" ;;
+            *)            echo "Unknown target ${target}" >&2; exit 1 ;;
+          esac
+
+      - name: Sync repo
+        working-directory: ${{ steps.pick.outputs.PATH }}
+        env:
+          TARGET_BRANCH: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.target || github.ref_name }}
+        run: |
+          git fetch --prune
+          git reset --hard "origin/${TARGET_BRANCH}"
+          git clean -fd
+
+      - name: Run deploy.sh
+        working-directory: ${{ steps.pick.outputs.PATH }}
+        run: |
+          chmod +x deploy.sh
+          ./deploy.sh
