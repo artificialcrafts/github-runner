@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+export DOCKER_BUILDKIT=1
 
 SCRIPT_PATH="${BASH_SOURCE[0]}"
 if [[ "${SCRIPT_PATH}" != /* ]]; then
