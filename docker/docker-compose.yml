@@ -4,7 +4,7 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile
-    container_name: clocktopus-runner
+    container_name: ${RUNNER_NAME}
     environment:
       RUNNER_URL: ${RUNNER_URL}
       RUNNER_TOKEN: ${RUNNER_TOKEN}
