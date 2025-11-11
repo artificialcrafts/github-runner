@@ -1,2 +1,4 @@
 .env
 docker/envs/*.env
+docker/work/*
+!docker/work/.gitkeep
