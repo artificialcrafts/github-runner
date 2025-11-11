@@ -1,17 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
-export DOCKER_BUILDKIT=1
 
 SCRIPT_PATH="${BASH_SOURCE[0]}"
 if [[ "${SCRIPT_PATH}" != /* ]]; then
   SCRIPT_PATH="$(cd "$(dirname "${SCRIPT_PATH}")" && pwd)/$(basename "${SCRIPT_PATH}")"
 fi
 ROOT_DIR="$(cd "$(dirname "${SCRIPT_PATH}")/.." && pwd)"
-COMPOSE="docker-compose -f docker/docker-compose.yml"
 
 # Parse flags: allow -e/--env/-env to select env file
-ENV_FILE_INPUT_DEFAULT="${RUNNER_ENV_FILE:-envs/clocktopus.env}"
-ENV_FILE_INPUT="${ENV_FILE_INPUT_DEFAULT}"
+ENV_FILE_INPUT="${RUNNER_ENV_FILE:-envs/clocktopus.env}"
 
 POSITIONAL=()
 while [[ $# -gt 0 ]]; do
@@ -78,29 +75,34 @@ PROJECT_NAME="$(echo "${PROJECT_NAME}" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-
 if [[ -z "${PROJECT_NAME}" ]]; then
   PROJECT_NAME="runner"
 fi
-export COMPOSE_PROJECT_NAME="${PROJECT_NAME}"
-# Rebuild COMPOSE with the project name so operations don't collide across envs
-COMPOSE="docker-compose -p ${COMPOSE_PROJECT_NAME} -f docker/docker-compose.yml"
 
+# Compose command (single declaration) with project name
+COMPOSE="docker-compose -p ${PROJECT_NAME} -f docker/docker-compose.yml"
+
+# Expose env file path for compose variable substitution and service env_file
 export RUNNER_ENV_FILE="${COMPOSE_ENV_PATH}"
 
 case "${1:-}" in
   start)
-    ${COMPOSE} up -d
+    DOCKER_BUILDKIT=1 ${COMPOSE} up -d
     ;;
   stop)
     ${COMPOSE} down --remove-orphans
     ;;
   restart)
     ${COMPOSE} down --remove-orphans
-    ${COMPOSE} up -d
+    DOCKER_BUILDKIT=1 ${COMPOSE} up -d
     ;;
   logs)
     shift
-    ${COMPOSE} logs "${@:-github-runner}"
+    if [[ $# -eq 0 ]]; then
+      ${COMPOSE} logs github-runner
+    else
+      ${COMPOSE} logs "$@"
+    fi
     ;;
   build)
-    ${COMPOSE} build --no-cache github-runner
+    DOCKER_BUILDKIT=1 ${COMPOSE} build --no-cache github-runner
     ;;
   *)
     cat <<'USAGE'
