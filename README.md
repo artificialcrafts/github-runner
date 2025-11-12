@@ -1,161 +1,104 @@
 # Clocktopus Self-Hosted GitHub Runner
 
-This repository contains a Docker packaging of the GitHub Actions self-hosted runner that can live on the internal host alongside the Clocktopus containers. The runner phones out to GitHub, listens for workflow jobs, and can execute your existing `deploy.sh` scripts located in `apps/clocktopus-*`.
+This repository contains a Dockerized GitHub Actions self-hosted runner you can run on an internal host. The runner phones out to GitHub, listens for jobs, and runs your existing `deploy.sh` scripts against directories mounted from the host (under `/apps` inside the container).
 
-## What's inside
+## What's Inside
 
-- `docker/Dockerfile` – builds the runner image on top of Ubuntu 22.04.
-- `docker/docker-compose.yml` – spins up the runner container, mounting the Clocktopus deployment directories and Docker socket.
-- `docker/envs/runner.env.example` – template for the environment variables the runner needs.
-- `scripts/entrypoint.sh` – registers the runner with GitHub and starts the service.
-- `examples/clocktopus-deploy.yml` – sample workflow to drop into the Clocktopus repo.
+- `docker/Dockerfile` – Runner image based on Ubuntu 22.04.
+- `docker/docker-compose.yml` – Defines the runner service and host mounts.
+- `docker/envs/runner.env.example` – Template for required env vars.
+- `docker/envs/clocktopus.env`, `docker/envs/playground.env` – Example envs for two repos.
+- `scripts/entrypoint.sh` – Registers the runner and starts it.
+- `scripts/runner.sh` – Helper to start/stop/build with the right env.
+- `scripts/examples/deploy-docker.yml` – Example GitHub Actions workflow.
 
 ## Prerequisites
 
-1. Docker and Docker Compose installed on the host machine.
-2. Network access from the host to `github.com` over HTTPS (port 443).
-3. Access to generate a **repository** or **organization** self-hosted runner registration token in GitHub (`Settings ▸ Actions ▸ Runners`). Tokens expire after one hour; fetch a fresh one each time you need to (re-)register.
-4. The Clocktopus deployment directories available on the host (default assumption: `/home/artificialcrafts/apps/clocktopus-*`). Adjust the mount path via `HOST_APPS_PATH` in your chosen env file if your layout differs.
+- Docker and Docker Compose available on the host (`docker-compose` CLI or the v2 plugin).
+- Host can reach `github.com` over HTTPS (port 443).
+- Ability to create a repository or organization runner token in GitHub (`Settings ▸ Actions ▸ Runners`). Tokens expire after 1 hour unless you use a PAT to request them automatically.
 
-## Quick start
+## Setup
 
-1. Clone this repository onto the internal host that can reach the Clocktopus Docker daemon and deployment scripts.
-2. Create an environment file under `docker/envs/` based on the template and fill in the values:
+1) Create an env file under `docker/envs/` based on the example and fill values:
 
-   ```bash
-   cp docker/envs/runner.env.example docker/envs/clocktopus.env
-   # Edit docker/envs/clocktopus.env and add your credentials
-   ```
+- `RUNNER_URL` – Repository or org URL (e.g. `https://github.com/your-org/clocktopus`).
+- `RUNNER_TOKEN` or `GITHUB_PAT` – Set one:
+  - Short‑lived `RUNNER_TOKEN` from GitHub UI/API, or
+  - Long‑lived `GITHUB_PAT` with required scopes so the runner can request tokens on startup/shutdown.
+- `RUNNER_NAME`, `RUNNER_LABELS`, `RUNNER_GROUP` – Stick to labels you’ll target in workflows.
+- `RUNNER_IMAGE_NAME` – Local image tag to build/use.
+- `HOST_APPS_PATH` – Host path mounted to `/apps` inside the container. Choose one scheme and make your workflows match it:
+  - Base‑dir mount: `/home/artificialcrafts/apps` → use `/apps/<app>/<env>` in workflows.
+  - Per‑app mount: `/home/artificialcrafts/apps/$APP_NAME` → use `/apps/<env>` in workflows.
+- `RUNNER_UID`/`RUNNER_GID` – UID/GID to run as inside the container (defaults are fine on most hosts).
+- Optional: `RUNNER_EPHEMERAL=true` for ephemeral registration per job.
 
-   - `RUNNER_URL` should point to the GitHub repository that owns the workflows (e.g. `https://github.com/your-org/clocktopus`).
-   - Provide either a short-lived `RUNNER_TOKEN` from the GitHub UI/API **or** set `GITHUB_PAT` to a Personal Access Token with `repo` + `admin:repo_hook` (for repos) or `admin:org` (for org runners). When `GITHUB_PAT` is present the container auto-requests fresh registration/removal tokens on every start/stop.
-   - `RUNNER_LABELS` defaults to `self-hosted,linux,deploy`. Workflows must request these labels.
-   - `HOST_APPS_PATH` should match the directory on the host where your environments live (e.g. `/home/artificialcrafts/apps`).
-   - `HOST_SSH_PATH` should point to the host SSH directory containing a key that GitHub accepts (e.g. `/home/artificialcrafts/.ssh`).
+Note: The compose file binds the host SSH directory at `/home/artificialcrafts/.ssh` into the container at `/runner/.ssh:ro`. Adjust the path in `docker/docker-compose.yml` if your SSH directory is different. Ensure `known_hosts` contains `github.com` and the key is accepted by GitHub.
 
-3. Build and start the runner container (from the repository root) using the helper script, which takes care of exporting the env values and invoking `docker-compose`:
+2) Build and start the runner using the helper script (from repo root):
 
-   ```bash
-   chmod +x scripts/runner.sh          # one time
-   RUNNER_ENV_FILE=envs/clocktopus.env ./scripts/runner.sh build   # optional, forces a rebuild
-   RUNNER_ENV_FILE=envs/clocktopus.env ./scripts/runner.sh start
-   ```
+- One‑time build (optional): `RUNNER_ENV_FILE=envs/your.env ./scripts/runner.sh build`
+- Start: `RUNNER_ENV_FILE=envs/your.env ./scripts/runner.sh start`
 
-   (If you omit `RUNNER_ENV_FILE`, the script defaults to `envs/clocktopus.env`. Reuse the same prefix for subsequent commands or export it in your shell.)
+Short form: `./scripts/runner.sh start -env your.env` (the script resolves `envs/your.env`). If you omit it entirely, the default is `envs/clocktopus.env`.
 
-   The container keeps a persistent work directory in `./docker/work` and mounts:
+3) Check logs to confirm registration and readiness:
 
-   - `/apps` → `${HOST_APPS_PATH}` on the host (so workflows can run `deploy.sh`).
-   - `/var/run/docker.sock` → the host Docker socket (optional, but useful if `deploy.sh` manipulates Docker).
-   - `/runner/.ssh` → `${HOST_SSH_PATH}` read-only (so the runner can authenticate to GitHub via SSH for `git pull`).
+- `./scripts/runner.sh logs` or `./scripts/runner.sh logs github-runner`
 
-4. Watch the logs the first time to confirm successful registration and job execution:
+If you see permission issues in the work dir, grant UID 1000 write access to `docker/work` on the host:
 
-   ```bash
-   RUNNER_ENV_FILE=envs/clocktopus.env ./scripts/runner.sh logs github-runner
-   ```
+- `sudo chown -R 1000:1000 docker/work && sudo chmod -R u+rwX docker/work`
 
-   If you see `Permission denied` errors for `/runner/_work/_tool`, make sure the host work directory is writable by UID 1000 (the runner user):
+## Using In Workflows
 
-   ```bash
-   sudo chown -R 1000:1000 docker/work
-   sudo chmod -R u+rwX docker/work
-   ```
+The container exposes `/apps` which maps to `${HOST_APPS_PATH}` on the host. Ensure your workflow paths match your chosen mount scheme.
 
-   Ensure `${HOST_SSH_PATH}` contains an SSH key that GitHub trusts (account key or deploy key) and that `known_hosts` already lists `github.com` (e.g. `ssh-keyscan github.com >> ${HOST_SSH_PATH}/known_hosts`). The runner image bundles the Docker CLI, buildx, and compose plugins so it can drive the host Docker engine via the mounted socket.
+Repo‑in‑place pattern (recommended if `/apps/...` already contains clones):
 
-5. If you did not supply `GITHUB_PAT`, fetch a fresh registration token each time you restart the container, update your chosen env file, and run:
+- Pick a target path per branch and run deployment from there. Example uses `git fetch/reset/clean` so the repo in `/apps/...` stays up‑to‑date.
+- See `scripts/examples/deploy-docker.yml` for a working example. Adapt the `DEV_PATH/NEXT_PATH/MAIN_PATH` values to your chosen mount scheme.
 
-   ```bash
-   RUNNER_ENV_FILE=envs/clocktopus.env ./scripts/runner.sh restart
-   ```
+If a target path is not a git repo, add a self‑heal step before sync to clone once:
 
-   If `GITHUB_PAT` is set you can simply rerun the script— it will request new registration/removal tokens automatically. For ephemeral runners (new registration per job), uncomment `RUNNER_EPHEMERAL=true` in the env file.
-
-### Fetching tokens via CLI
-
-- GitHub CLI: `gh auth login` (once) then `gh repo runnertoken your-org/clocktopus` to print a fresh registration token, or `gh api --method POST repos/your-org/clocktopus/actions/runners/registration-token --jq .token`.
-- cURL: `curl -s -X POST -H "Authorization: Bearer $GITHUB_PAT" -H "Accept: application/vnd.github+json" https://api.github.com/repos/your-org/clocktopus/actions/runners/registration-token | jq -r .token`.
-- Replace `repos/...` with `orgs/<org>` if you register an organization-level runner.
-
-## Managing the runner container
-
-Use `scripts/runner.sh` for day-to-day operations:
-
-- `RUNNER_ENV_FILE=envs/clocktopus.env ./scripts/runner.sh start` – start the runner
-- `RUNNER_ENV_FILE=envs/clocktopus.env ./scripts/runner.sh restart` – restart with fresh tokens
-- `RUNNER_ENV_FILE=envs/clocktopus.env ./scripts/runner.sh stop` – stop and remove the container/network
-- `RUNNER_ENV_FILE=envs/clocktopus.env ./scripts/runner.sh logs [service]` – tail logs (defaults to `github-runner`)
-- `RUNNER_ENV_FILE=envs/clocktopus.env ./scripts/runner.sh build` – rebuild the image with the latest entrypoint changes
-
-Omit `RUNNER_ENV_FILE=…` if you keep the default `docker/envs/clocktopus.env`. The script auto-sources the env file so the container always receives the correct `RUNNER_URL`, labels, and PAT.
-
-## Example workflow for the Clocktopus repo
-
-Add a workflow similar to [`examples/clocktopus-deploy.yml`](examples/clocktopus-deploy.yml) to the Clocktopus repository (e.g. `.github/workflows/deploy.yml`):
-
-```yaml
-name: Deploy Clocktopus
-
-on:
-  workflow_dispatch:
-    inputs:
-      target:
-        description: "Environment to deploy"
-        required: true
-        default: development
-        type: choice
-        options: [development, next, main]
-  push:
-    branches:
-      - next
-      - main
-
-jobs:
-  deploy:
-    runs-on: [self-hosted, linux, deploy]
-    steps:
-      - name: Determine target path
-        id: pick
-        run: |
-          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
-            target="${{ github.event.inputs.target }}"
-          else
-            target="${GITHUB_REF_NAME}"
-          fi
-
-          case "${target}" in
-            development) echo "PATH=/apps/clocktopus-development" >> "$GITHUB_OUTPUT" ;;
-            next)        echo "PATH=/apps/clocktopus-next" >> "$GITHUB_OUTPUT" ;;
-            main)        echo "PATH=/apps/clocktopus" >> "$GITHUB_OUTPUT" ;;
-            *)
-              echo "Unsupported deployment target '${target}'" >&2
-              exit 1
-              ;;
-          esac
-
-      - name: Checkout repository (optional)
-        uses: actions/checkout@v4
-
-      - name: Run deploy script
-        working-directory: ${{ steps.pick.outputs.PATH }}
-        run: |
-          if [[ ! -x "deploy.sh" ]]; then
-            echo "deploy.sh missing or not executable in ${PWD}" >&2
-            exit 1
-          fi
-          ./deploy.sh
+```bash
+mkdir -p "$TARGET_DIR"
+if [ ! -d "$TARGET_DIR/.git" ]; then
+  git clone --branch "$TARGET_BRANCH" "git@github.com:${GITHUB_REPOSITORY}.git" "$TARGET_DIR"
+fi
+git -C "$TARGET_DIR" fetch --prune
+git -C "$TARGET_DIR" reset --hard "origin/$TARGET_BRANCH"
+git -C "$TARGET_DIR" clean -fd
 ```
 
-### Notes
+Artifact‑only pattern (build in workspace, deploy to `/apps`):
 
-- The workflow relies on the `/apps` mount exposed by the runner container. Adjust the mount or paths if your deployment scripts live elsewhere.
-- If your `deploy.sh` script rebuilds Docker images, ensure the runner UID has permission to access the socket. By default the container runs as the `runner` user; you may need to add it to the host Docker group ID (set `group_add` in `docker/docker-compose.yml`).
-- Restrict which workflows can target the runner by scoping `RUNNER_URL` to a single repository and assigning unique labels (`runs-on`).
-- Consider using GitHub environments with required reviewers/secrets for additional safety gates before deployments.
+- Checkout stays in the runner workspace; `deploy.sh` copies/rsyncs artifacts to `${PATH}` under `/apps`.
+- In this pattern you should not run `git` inside `/apps/...`.
 
-## Managing updates
+## Operating The Runner
 
-- To update the runner version, change `RUNNER_VERSION` in `docker/Dockerfile` and rebuild.
-- Keep the host patched and monitor `./scripts/runner.sh logs` for any registration failures.
-- Use multiple runner instances (with different `RUNNER_NAME` and `RUNNER_LABELS`) if you need parallel deployments per environment.
+- Start: `./scripts/runner.sh start [-env <file>]`
+- Stop: `./scripts/runner.sh stop [-env <file>]`
+- Restart: `./scripts/runner.sh restart [-env <file>]`
+- Logs: `./scripts/runner.sh logs [service] [-env <file>]` (default service `github-runner`)
+- Build image: `./scripts/runner.sh build [-env <file>]`
+
+Notes:
+
+- Multiple env files = multiple isolated runner projects. The script derives the Compose project name from `COMPOSE_PROJECT_NAME` (if set) or from `APP_NAME`/`RUNNER_NAME`/env filename. Container names are not fixed (we don’t set `container_name`) to avoid collisions across projects.
+- Only `RUNNER_ENV_FILE` is exported for Compose so the `env_file:` reference works. All other values are sourced from your chosen env file.
+
+## Troubleshooting
+
+- Container name conflict on start: remove any old container with a fixed name (from older versions) using `docker rm -f <name>`; current compose uses namespaced defaults like `<project>-github-runner-1`.
+- Paths don’t exist inside the container: ensure your `HOST_APPS_PATH` matches your workflow paths (base‑dir vs per‑app scheme).
+- “Not a git repository” in `/apps/...`: either seed clones on the host or add the self‑heal snippet above so the workflow clones when missing.
+- SSH issues: make sure `/home/artificialcrafts/.ssh` on the host has a key GitHub accepts and `known_hosts` contains `github.com`.
+
+## Managing Updates
+
+- Update the runner version by editing `RUNNER_VERSION` in `docker/Dockerfile`, then rebuild.
+- Monitor with `./scripts/runner.sh logs` and keep the host OS updated.
+- Spin up additional runners with different env files if you need parallelism or isolation.
